@@ -2,10 +2,10 @@ using System.Collections.ObjectModel;
 
 namespace BmsLinearBpmChanger.Core;
 
-public enum ApproximationGranularity
+public enum SubdivisionUnit
 {
-    PerMeasure,
-    PerBeat,
+    QuarterNote,
+    SixteenthNote,
 }
 
 public enum AverageMethod
@@ -14,11 +14,15 @@ public enum AverageMethod
     Arithmetic,
 }
 
-public sealed record SegmentInput(int StartMeasure, int EndMeasure, double StartBpm, double EndBpm);
+public sealed record SegmentInput(
+    int StartMeasure,
+    int EndMeasure,
+    double StartBpm,
+    double EndBpm,
+    SubdivisionUnit Subdivision = SubdivisionUnit.QuarterNote);
 
 public sealed record ConversionOptions(
     IReadOnlyList<SegmentInput> Segments,
-    ApproximationGranularity Granularity = ApproximationGranularity.PerMeasure,
     AverageMethod AverageMethod = AverageMethod.TimeEquivalent,
     int DecimalPlaces = 2);
 
@@ -120,6 +124,11 @@ public sealed class PreparedConversion
     public required IReadOnlyList<string> Errors { get; init; }
     public double TotalExactSeconds { get; init; }
     public double TotalApproximateSeconds { get; init; }
+    public int BpmIdCapacity { get; init; }
+    public int ExistingBpmIdCount { get; init; }
+    public int RequiredNewBpmIdCount { get; init; }
+    public int TotalBpmIdCount => ExistingBpmIdCount + RequiredNewBpmIdCount;
+    public int RemainingBpmIdCount => Math.Max(0, BpmIdCapacity - TotalBpmIdCount);
     public double TotalErrorMilliseconds => (TotalApproximateSeconds - TotalExactSeconds) * 1000d;
     public bool CanConvert => Errors.Count == 0 && Conflicts.Count == 0 && Events.Count > 0;
 }

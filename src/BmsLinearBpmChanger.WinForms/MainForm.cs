@@ -22,12 +22,11 @@ internal sealed class MainForm : Form
     private readonly Label _dropTitle = new();
     private readonly Label _dropSubtitle = new();
     private readonly ListView _fileDetails = new();
-    private readonly RadioButton _perMeasure = new() { Text = "마디당 1회", Checked = true, AutoSize = true };
-    private readonly RadioButton _perBeat = new() { Text = "박자당 1회", AutoSize = true };
     private readonly RadioButton _timeEquivalent = new() { Text = "시간 등가 평균 (권장)", Checked = true, AutoSize = true };
     private readonly RadioButton _arithmetic = new() { Text = "단순 산술평균", AutoSize = true };
     private readonly NumericUpDown _decimalPlaces = new() { Minimum = 0, Maximum = 6, Value = 2, Width = 55, TextAlign = HorizontalAlignment.Right };
     private readonly DataGridView _segmentGrid = new();
+    private readonly Label _segmentIdEstimate = new();
     private readonly Panel _validationBanner = new();
     private readonly Label _validationIcon = new();
     private readonly Label _validationTitle = new();
@@ -37,6 +36,7 @@ internal sealed class MainForm : Form
     private readonly Label _graphCaption = new();
     private readonly DataGridView _previewGrid = new();
     private readonly Label _eventMetric = MetricValue();
+    private readonly Label _idMetric = MetricValue(10f);
     private readonly Label _timeMetric = MetricValue();
     private readonly Label _errorMetric = MetricValue();
     private readonly Label _outputHint = new();
@@ -50,8 +50,8 @@ internal sealed class MainForm : Form
     {
         Text = "BMS Linear BPM Changer - 선형 변속 근사 데모";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1050, 720);
-        ClientSize = new Size(1380, 850);
+        MinimumSize = new Size(1200, 720);
+        ClientSize = new Size(1420, 850);
         Font = new Font("Segoe UI", 9f);
         BackColor = Color.FromArgb(220, 229, 237);
         AutoScaleMode = AutoScaleMode.Dpi;
@@ -64,7 +64,7 @@ internal sealed class MainForm : Form
         Controls.Add(BuildStatusBar());
 
         ConfigureEvents();
-        AddSegment(new SegmentRow { StartMeasure = 41, EndMeasure = 49, StartBpm = 120, EndBpm = 180 });
+        AddSegment(new SegmentRow { StartMeasure = 41, EndMeasure = 49, StartBpm = 120, EndBpm = 180, Subdivision = SubdivisionUnit.QuarterNote });
         RenderFileDetails();
         RenderIdle();
     }
@@ -123,7 +123,7 @@ internal sealed class MainForm : Form
         var split = new SplitContainer
         {
             Dock = DockStyle.Fill,
-            SplitterDistance = 470,
+            SplitterDistance = 570,
             SplitterWidth = 7,
             FixedPanel = FixedPanel.Panel1,
             BackColor = Color.FromArgb(177, 192, 204),
@@ -140,7 +140,7 @@ internal sealed class MainForm : Form
     {
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(0) };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 215));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 160));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 145));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.Controls.Add(BuildFileGroup(), 0, 0);
         layout.Controls.Add(BuildSettingsGroup(), 0, 1);
@@ -199,30 +199,28 @@ internal sealed class MainForm : Form
 
     private Control BuildSettingsGroup()
     {
-        var group = NewGroup("2. 근사 설정");
+        var group = NewGroup("2. 공통 설정");
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Padding = new Padding(5, 4, 5, 2) };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 43));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 57));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        var granularity = SettingPanel("배치 간격", _perMeasure, _perBeat);
         var average = SettingPanel("평균 방식", _timeEquivalent, _arithmetic);
         var rounding = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Padding = new Padding(2, 5, 0, 0) };
         rounding.Controls.Add(new Label { Text = "BPM 소수점 자리", AutoSize = true, Font = new Font(Font, FontStyle.Bold), Margin = new Padding(0, 5, 8, 0) });
         rounding.Controls.Add(_decimalPlaces);
         rounding.Controls.Add(new Label { Text = "자리", AutoSize = true, Margin = new Padding(3, 5, 0, 0) });
-        var hint = new Label
-        {
-            Text = "시간 등가 평균은 선형 변속의 실제 통과시간과 같아지도록 계산합니다.",
-            Dock = DockStyle.Fill,
-            ForeColor = Color.FromArgb(70, 90, 103),
-            Padding = new Padding(3, 7, 0, 0),
-        };
-        layout.Controls.Add(granularity, 0, 0);
-        layout.Controls.Add(average, 1, 0);
-        layout.Controls.Add(rounding, 0, 1);
-        layout.Controls.Add(hint, 1, 1);
+        _segmentIdEstimate.Text = "파일을 불러오면 선택 구간의 4분/16분 ID 예상량을 표시합니다.";
+        _segmentIdEstimate.Dock = DockStyle.Fill;
+        _segmentIdEstimate.BorderStyle = BorderStyle.FixedSingle;
+        _segmentIdEstimate.BackColor = Color.FromArgb(238, 246, 251);
+        _segmentIdEstimate.ForeColor = Color.FromArgb(65, 85, 99);
+        _segmentIdEstimate.Padding = new Padding(7, 7, 4, 3);
+        layout.Controls.Add(average, 0, 0);
+        layout.Controls.Add(rounding, 1, 0);
+        layout.Controls.Add(_segmentIdEstimate, 0, 1);
+        layout.SetColumnSpan(_segmentIdEstimate, 2);
         group.Controls.Add(layout);
         return group;
     }
@@ -236,7 +234,7 @@ internal sealed class MainForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
         var note = new Label
         {
-            Text = "끝 마디는 목표 BPM에 도달하는 경계입니다.\r\n예: 041→049는 041 이상, 049 미만 구간을 변속합니다.",
+            Text = "끝 마디는 목표 BPM에 도달하는 경계입니다. 각 구간마다 4분음표 또는 16분음표 간격을 선택합니다.\r\n예: 041→049는 041 이상, 049 미만 구간을 변속합니다.",
             Dock = DockStyle.Fill,
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = Color.FromArgb(238, 246, 251),
@@ -323,12 +321,13 @@ internal sealed class MainForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 53));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 27));
-        var metrics = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, CellBorderStyle = TableLayoutPanelCellBorderStyle.Single };
-        for (var index = 0; index < 3; index++)
-            metrics.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333f));
+        var metrics = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, CellBorderStyle = TableLayoutPanelCellBorderStyle.Single };
+        for (var index = 0; index < 4; index++)
+            metrics.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
         metrics.Controls.Add(MetricPanel("생성 이벤트", _eventMetric), 0, 0);
-        metrics.Controls.Add(MetricPanel("구간 실제시간", _timeMetric), 1, 0);
-        metrics.Controls.Add(MetricPanel("예상 누적 오차", _errorMetric), 2, 0);
+        metrics.Controls.Add(MetricPanel("BPM ID 기존 + 신규", _idMetric), 1, 0);
+        metrics.Controls.Add(MetricPanel("구간 실제시간", _timeMetric), 2, 0);
+        metrics.Controls.Add(MetricPanel("예상 누적 오차", _errorMetric), 3, 0);
         ConfigurePreviewGrid();
         _outputHint.Dock = DockStyle.Fill;
         _outputHint.TextAlign = ContentAlignment.MiddleLeft;
@@ -357,6 +356,22 @@ internal sealed class MainForm : Form
         _segmentGrid.Columns.Add(TextColumn("끝 마디", nameof(SegmentRow.EndMeasure), 83));
         _segmentGrid.Columns.Add(TextColumn("시작 BPM", nameof(SegmentRow.StartBpm), 88));
         _segmentGrid.Columns.Add(TextColumn("끝 BPM", nameof(SegmentRow.EndBpm), 88));
+        _segmentGrid.Columns.Add(new DataGridViewComboBoxColumn
+        {
+            HeaderText = "배치 간격",
+            DataPropertyName = nameof(SegmentRow.Subdivision),
+            DataSource = new[]
+            {
+                new SubdivisionChoice(SubdivisionUnit.QuarterNote, "4분음표당"),
+                new SubdivisionChoice(SubdivisionUnit.SixteenthNote, "16분음표당"),
+            },
+            DisplayMember = nameof(SubdivisionChoice.Label),
+            ValueMember = nameof(SubdivisionChoice.Value),
+            ValueType = typeof(SubdivisionUnit),
+            Width = 105,
+            FlatStyle = FlatStyle.Flat,
+            SortMode = DataGridViewColumnSortMode.NotSortable,
+        });
         _segmentGrid.Columns.Add(new DataGridViewButtonColumn { HeaderText = "", Text = "×", UseColumnTextForButtonValue = true, Width = 34, FlatStyle = FlatStyle.System });
     }
 
@@ -391,13 +406,17 @@ internal sealed class MainForm : Form
             _analysisTimer.Stop();
             Analyze();
         };
-        _perMeasure.CheckedChanged += (_, _) => ScheduleAnalysis();
-        _perBeat.CheckedChanged += (_, _) => ScheduleAnalysis();
         _timeEquivalent.CheckedChanged += (_, _) => ScheduleAnalysis();
         _arithmetic.CheckedChanged += (_, _) => ScheduleAnalysis();
         _decimalPlaces.ValueChanged += (_, _) => ScheduleAnalysis();
         _segmentGrid.CellValueChanged += (_, _) => ScheduleAnalysis();
         _segmentGrid.CellEndEdit += (_, _) => ScheduleAnalysis();
+        _segmentGrid.SelectionChanged += (_, _) => ScheduleAnalysis();
+        _segmentGrid.CurrentCellDirtyStateChanged += (_, _) =>
+        {
+            if (_segmentGrid.IsCurrentCellDirty && _segmentGrid.CurrentCell is DataGridViewComboBoxCell)
+                _segmentGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+        };
         _segmentGrid.DataError += (_, eventArgs) =>
         {
             eventArgs.ThrowException = false;
@@ -483,7 +502,7 @@ internal sealed class MainForm : Form
         var prior = _segments.LastOrDefault();
         AddSegment(prior is null
             ? new SegmentRow { StartMeasure = 0, EndMeasure = 8, StartBpm = 120, EndBpm = 180 }
-            : new SegmentRow { StartMeasure = prior.EndMeasure, EndMeasure = Math.Min(999, prior.EndMeasure + 8), StartBpm = prior.EndBpm, EndBpm = prior.EndBpm });
+            : new SegmentRow { StartMeasure = prior.EndMeasure, EndMeasure = Math.Min(999, prior.EndMeasure + 8), StartBpm = prior.EndBpm, EndBpm = prior.EndBpm, Subdivision = prior.Subdivision });
     }
 
     private void AddSegment(SegmentRow segment)
@@ -522,13 +541,13 @@ internal sealed class MainForm : Form
         {
             _segmentGrid.EndEdit();
             var options = new ConversionOptions(
-                _segments.Select(segment => new SegmentInput(segment.StartMeasure, segment.EndMeasure, segment.StartBpm, segment.EndBpm)).ToList(),
-                _perBeat.Checked ? ApproximationGranularity.PerBeat : ApproximationGranularity.PerMeasure,
+                _segments.Select(segment => new SegmentInput(segment.StartMeasure, segment.EndMeasure, segment.StartBpm, segment.EndBpm, segment.Subdivision)).ToList(),
                 _arithmetic.Checked ? AverageMethod.Arithmetic : AverageMethod.TimeEquivalent,
                 (int)_decimalPlaces.Value);
             _prepared = LinearBpmEngine.Prepare(_document, options);
             RenderValidation(_prepared);
             RenderPreview(_prepared);
+            RenderSegmentIdEstimate(options, _prepared.Errors.Count == 0);
             _graph.Rows = _prepared.Rows;
             _saveButton.Enabled = _prepared.CanConvert;
             SetStatus(_prepared.CanConvert
@@ -620,11 +639,14 @@ internal sealed class MainForm : Form
         _messageList.Items.Clear();
         _previewGrid.Rows.Clear();
         _eventMetric.Text = "0";
+        _idMetric.Text = "0 + 0 = 0 / 1295";
+        _idMetric.ForeColor = Color.FromArgb(23, 62, 92);
         _timeMetric.Text = "0.000 s";
         _errorMetric.Text = "0.000 ms";
         _graph.Rows = Array.Empty<PreviewRow>();
         _graphCaption.Text = "파일을 불러오면 표시됩니다.";
         _outputHint.Text = "원본을 유지하고 파일명_linear_bpm.bms로 출력합니다.";
+        _segmentIdEstimate.Text = "파일을 불러오면 선택 구간의 4분/16분 ID 예상량을 표시합니다.";
     }
 
     private void RenderValidation(PreparedConversion prepared)
@@ -651,6 +673,12 @@ internal sealed class MainForm : Form
     private void RenderPreview(PreparedConversion prepared)
     {
         _eventMetric.Text = prepared.Events.Count.ToString(CultureInfo.InvariantCulture);
+        _idMetric.Text = $"{prepared.ExistingBpmIdCount} + {prepared.RequiredNewBpmIdCount} = {prepared.TotalBpmIdCount} / {prepared.BpmIdCapacity}";
+        _idMetric.ForeColor = prepared.TotalBpmIdCount > prepared.BpmIdCapacity
+            ? Color.FromArgb(163, 40, 32)
+            : prepared.RemainingBpmIdCount < 100
+                ? Color.FromArgb(139, 101, 13)
+                : Color.FromArgb(39, 101, 35);
         _timeMetric.Text = $"{prepared.TotalExactSeconds:F3} s";
         _errorMetric.Text = $"{Signed(prepared.TotalErrorMilliseconds, 3)} ms";
         _errorMetric.ForeColor = Math.Abs(prepared.TotalErrorMilliseconds) <= 1d
@@ -663,7 +691,9 @@ internal sealed class MainForm : Form
         _previewGrid.Rows.Clear();
         foreach (var row in prepared.Rows.Take(1_000))
         {
-            var position = _perBeat.Checked ? $"{row.Measure:000} · {row.Slot + 1}박" : $"{row.Measure:000}";
+            var subdivision = prepared.Options.Segments[row.SegmentIndex].Subdivision;
+            var unit = subdivision == SubdivisionUnit.SixteenthNote ? "16분" : "4분";
+            var position = $"{row.Measure:000} · {unit} {row.Slot + 1}";
             _previewGrid.Rows.Add(
                 row.SegmentIndex + 1,
                 position,
@@ -680,6 +710,28 @@ internal sealed class MainForm : Form
         _outputHint.Text = prepared.Rows.Count > 1_000
             ? $"표는 처음 1,000개만 표시합니다. 출력: {outputName}"
             : $"원본은 변경하지 않습니다. 출력: {outputName}";
+    }
+
+    private void RenderSegmentIdEstimate(ConversionOptions options, bool canEstimate)
+    {
+        if (_document is null || options.Segments.Count == 0 || !canEstimate)
+        {
+            _segmentIdEstimate.Text = "입력 오류를 해결하면 선택 구간의 ID 예상량을 계산합니다.";
+            return;
+        }
+
+        var segmentIndex = Math.Clamp(_segmentGrid.CurrentCell?.RowIndex ?? 0, 0, options.Segments.Count - 1);
+        PreparedConversion Estimate(SubdivisionUnit subdivision)
+        {
+            var segments = options.Segments
+                .Select((segment, index) => index == segmentIndex ? segment with { Subdivision = subdivision } : segment)
+                .ToList();
+            return LinearBpmEngine.Prepare(_document, options with { Segments = segments });
+        }
+
+        var quarterNote = Estimate(SubdivisionUnit.QuarterNote);
+        var sixteenthNote = Estimate(SubdivisionUnit.SixteenthNote);
+        _segmentIdEstimate.Text = $"{segmentIndex + 1}번 구간 선택 시 전체 신규 BPM ID · 4분음표 {quarterNote.RequiredNewBpmIdCount}개 / 16분음표 {sixteenthNote.RequiredNewBpmIdCount}개";
     }
 
     private void RenderAnalysisError(string message)
@@ -728,7 +780,7 @@ internal sealed class MainForm : Form
 
     private static Label LegendLabel(string text, Color color) => new() { Text = text, ForeColor = color, AutoSize = true, Margin = new Padding(0, 4, 14, 0), Font = new Font("Segoe UI", 9f, FontStyle.Bold) };
 
-    private static Label MetricValue() => new() { Text = "0", Dock = DockStyle.Fill, Font = new Font("Segoe UI", 12f), ForeColor = Color.FromArgb(23, 62, 92), TextAlign = ContentAlignment.TopLeft };
+    private static Label MetricValue(float fontSize = 12f) => new() { Text = "0", Dock = DockStyle.Fill, Font = new Font("Segoe UI", fontSize), ForeColor = Color.FromArgb(23, 62, 92), TextAlign = ContentAlignment.TopLeft };
 
     private static Control MetricPanel(string caption, Label value)
     {

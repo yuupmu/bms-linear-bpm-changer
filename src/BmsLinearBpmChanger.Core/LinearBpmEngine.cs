@@ -4,6 +4,8 @@ namespace BmsLinearBpmChanger.Core;
 
 public static class LinearBpmEngine
 {
+    public const int MaximumExtendedBpmIds = 36 * 36 - 1;
+
     private const int MaximumChannelResolution = 15_360;
     private const int MaximumPositionDenominator = 7_680;
 
@@ -85,6 +87,8 @@ public static class LinearBpmEngine
             .ThenBy(item => item.Position.Value)
             .ToList();
 
+        var existingBpmIdCount = CollectUsedIds(document).Count(id => id != "00");
+        var requiredNewBpmIdCount = CountRequiredNewDefinitions(document, events, options.DecimalPlaces);
         var definitions = AllocateDefinitions(document, events, options.DecimalPlaces, errors);
         var channelLines = BuildChannelLines(events, errors, conflicts);
 
@@ -100,6 +104,9 @@ public static class LinearBpmEngine
             Errors = errors.Distinct().ToList().AsReadOnly(),
             TotalExactSeconds = totalExactSeconds,
             TotalApproximateSeconds = totalApproximateSeconds,
+            BpmIdCapacity = MaximumExtendedBpmIds,
+            ExistingBpmIdCount = existingBpmIdCount,
+            RequiredNewBpmIdCount = requiredNewBpmIdCount,
         };
     }
 
@@ -145,6 +152,8 @@ public static class LinearBpmEngine
                 errors.Add($"{label}: 끝 마디는 시작 마디보다 커야 합니다.");
             if (!double.IsFinite(segment.StartBpm) || !double.IsFinite(segment.EndBpm) || segment.StartBpm <= 0 || segment.EndBpm <= 0)
                 errors.Add($"{label}: BPM은 0보다 큰 숫자여야 합니다.");
+            if (!Enum.IsDefined(segment.Subdivision))
+                errors.Add($"{label}: 지원하지 않는 근사 단위입니다.");
         }
 
         var ordered = options.Segments.Select((segment, index) => (segment, index))
@@ -163,27 +172,41 @@ public static class LinearBpmEngine
     {
         var rows = new List<PreviewRow>();
         var segmentCumulativeMilliseconds = 0d;
-        var measureSpan = segment.EndMeasure - segment.StartMeasure;
+        var measures = Enumerable.Range(segment.StartMeasure, segment.EndMeasure - segment.StartMeasure)
+            .Select(measure => (Measure: measure, QuarterBeats: document.MeasureRatio(measure) * 4d))
+            .ToList();
 
-        for (var measure = segment.StartMeasure; measure < segment.EndMeasure; measure++)
+        foreach (var item in measures)
         {
-            var ratio = document.MeasureRatio(measure);
-            var quarterBeats = ratio * 4d;
-            if (!double.IsFinite(quarterBeats) || quarterBeats <= 0)
-                throw new InvalidOperationException($"{measure:000}마디의 길이를 해석할 수 없습니다.");
+            if (!double.IsFinite(item.QuarterBeats) || item.QuarterBeats <= 0)
+                throw new InvalidOperationException($"{item.Measure:000}마디의 길이를 해석할 수 없습니다.");
+        }
 
-            var boundaries = options.Granularity == ApproximationGranularity.PerBeat
-                ? BeatBoundaries(quarterBeats)
-                : new List<double> { 0d, quarterBeats };
+        var totalQuarterBeats = measures.Sum(item => item.QuarterBeats);
+        if (!double.IsFinite(totalQuarterBeats) || totalQuarterBeats <= 0)
+            throw new InvalidOperationException("변속 구간의 전체 길이를 계산할 수 없습니다.");
+
+        var elapsedQuarterBeats = 0d;
+        var subdivisionLength = segment.Subdivision switch
+        {
+            SubdivisionUnit.QuarterNote => 1d,
+            SubdivisionUnit.SixteenthNote => 0.25d,
+            _ => throw new InvalidOperationException("지원하지 않는 근사 단위입니다."),
+        };
+
+        foreach (var item in measures)
+        {
+            var measure = item.Measure;
+            var quarterBeats = item.QuarterBeats;
+            var boundaries = SubdivisionBoundaries(quarterBeats, subdivisionLength);
 
             for (var slot = 0; slot < boundaries.Count - 1; slot++)
             {
                 var beatStart = boundaries[slot];
                 var beatEnd = boundaries[slot + 1];
                 var localStart = beatStart / quarterBeats;
-                var localEnd = beatEnd / quarterBeats;
-                var progressStart = (measure - segment.StartMeasure + localStart) / measureSpan;
-                var progressEnd = (measure - segment.StartMeasure + localEnd) / measureSpan;
+                var progressStart = (elapsedQuarterBeats + beatStart) / totalQuarterBeats;
+                var progressEnd = (elapsedQuarterBeats + beatEnd) / totalQuarterBeats;
                 var bpmStart = segment.StartBpm + (segment.EndBpm - segment.StartBpm) * progressStart;
                 var bpmEnd = segment.StartBpm + (segment.EndBpm - segment.StartBpm) * progressEnd;
                 var unroundedBpm = options.AverageMethod == AverageMethod.Arithmetic
@@ -211,15 +234,25 @@ public static class LinearBpmEngine
                     segmentCumulativeMilliseconds,
                     0d));
             }
+
+            elapsedQuarterBeats += quarterBeats;
         }
         return rows;
     }
 
-    private static List<double> BeatBoundaries(double quarterBeats)
+    private static List<double> SubdivisionBoundaries(double quarterBeats, double subdivisionLength)
     {
+        var intervalCount = Math.Ceiling(quarterBeats / subdivisionLength);
+        if (intervalCount > MaximumChannelResolution)
+            throw new InvalidOperationException($"한 마디의 근사 구간이 너무 많습니다({intervalCount.ToString(CultureInfo.InvariantCulture)}개).");
+
         var boundaries = new List<double> { 0d };
-        for (var beat = 1d; beat < quarterBeats - 1e-10; beat += 1d)
-            boundaries.Add(beat);
+        for (var index = 1; index < intervalCount; index++)
+        {
+            var boundary = index * subdivisionLength;
+            if (boundary < quarterBeats - 1e-10)
+                boundaries.Add(boundary);
+        }
         boundaries.Add(quarterBeats);
         return boundaries;
     }
@@ -279,12 +312,10 @@ public static class LinearBpmEngine
         int decimals,
         ICollection<string> errors)
     {
-        var usedIds = new HashSet<string>(document.BpmDefinitions.Keys, StringComparer.OrdinalIgnoreCase);
-        foreach (var existing in document.ExistingBpmEvents.Where(item => item.Channel == "08"))
-            usedIds.Add(existing.Token);
+        var usedIds = CollectUsedIds(document);
 
         var bpmToId = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var (id, bpm) in document.BpmDefinitions)
+        foreach (var (id, bpm) in document.BpmDefinitions.Where(item => item.Key != "00"))
             bpmToId[CanonicalBpm(bpm)] = id.ToUpperInvariant();
 
         var definitions = new List<GeneratedBpmDefinition>();
@@ -294,7 +325,7 @@ public static class LinearBpmEngine
             var canonical = CanonicalBpm(double.Parse(text, CultureInfo.InvariantCulture));
             if (!bpmToId.TryGetValue(canonical, out var id))
             {
-                id = Enumerable.Range(1, 36 * 36 - 1)
+                id = Enumerable.Range(1, MaximumExtendedBpmIds)
                     .Select(ToBase36Id)
                     .FirstOrDefault(candidate => !usedIds.Contains(candidate)) ?? string.Empty;
                 if (id.Length == 0)
@@ -310,6 +341,30 @@ public static class LinearBpmEngine
             generated.BpmText = text;
         }
         return definitions;
+    }
+
+    private static HashSet<string> CollectUsedIds(BmsDocument document)
+    {
+        var usedIds = new HashSet<string>(document.BpmDefinitions.Keys, StringComparer.OrdinalIgnoreCase);
+        foreach (var existing in document.ExistingBpmEvents.Where(item => item.Channel == "08"))
+            usedIds.Add(existing.Token);
+        return usedIds;
+    }
+
+    private static int CountRequiredNewDefinitions(
+        BmsDocument document,
+        IEnumerable<GeneratedBpmEvent> events,
+        int decimals)
+    {
+        var existingBpms = document.BpmDefinitions
+            .Where(item => item.Key != "00")
+            .Select(item => CanonicalBpm(item.Value))
+            .ToHashSet(StringComparer.Ordinal);
+
+        return events
+            .Select(generated => CanonicalBpm(double.Parse(FormatBpm(generated.Bpm, decimals), CultureInfo.InvariantCulture)))
+            .Distinct(StringComparer.Ordinal)
+            .Count(canonical => !existingBpms.Contains(canonical));
     }
 
     private static string CanonicalBpm(double value) => value.ToString("G17", CultureInfo.InvariantCulture);
