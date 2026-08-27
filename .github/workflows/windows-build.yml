@@ -23,7 +23,7 @@ jobs:
         run: dotnet run --project tests/CoreSmokeTests/CoreSmokeTests.csproj -c Release
 
       - name: Build Windows application
-        run: dotnet build src/BmsLinearBpmChanger.WinForms/BmsLinearBpmChanger.WinForms.csproj -c Release --no-restore
+        run: dotnet build src/BmsLinearBpmChanger.WinForms/BmsLinearBpmChanger.WinForms.csproj -c Release
 
       - name: Publish single EXE
         run: >-
