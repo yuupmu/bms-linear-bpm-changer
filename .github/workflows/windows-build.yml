@@ -1,0 +1,47 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run core tests
+        run: dotnet run --project tests/CoreSmokeTests/CoreSmokeTests.csproj -c Release
+
+      - name: Build Windows application
+        run: dotnet build src/BmsLinearBpmChanger.WinForms/BmsLinearBpmChanger.WinForms.csproj -c Release --no-restore
+
+      - name: Publish single EXE
+        run: >-
+          dotnet publish src/BmsLinearBpmChanger.WinForms/BmsLinearBpmChanger.WinForms.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:PublishTrimmed=false
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o dist/win-x64
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: BmsLinearBpmChanger-win-x64
+          path: dist/win-x64/BmsLinearBpmChanger.exe
+          if-no-files-found: error
